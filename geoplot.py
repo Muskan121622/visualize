@@ -38,8 +38,11 @@ import pandas as pd
 import numpy as np
 
 from string import Template
+# Utility function to fetch nested dictionary values based on a "/"-separated path
 from agent_torch.core.helpers import get_by_path
 
+# HTML template for rendering the time-series heatmap using CesiumJS.
+# It dynamically fills in access tokens, time bounds, GeoJSON data, and visual settings.
 geoplot_template = """
 <!doctype html>
 <html lang="en">
@@ -212,14 +215,15 @@ geoplot_template = """
 </html>
 """
 
-
+# Reads a nested variable from the simulation state using a path-like string (e.g., "agents/consumers/coordinates").
 def read_var(state, var):
     return get_by_path(state, re.split("/", var))
 
-
+# Class to generate a 3D Cesium-based visualization of simulation data.
 class GeoPlot:
     def __init__(self, config, options):
         self.config = config
+		# Extract visualization options like Cesium token, simulation step time, and property paths
         (
             self.cesium_token,
             self.step_time,
@@ -233,20 +237,27 @@ class GeoPlot:
             options["feature"],
             options["visualization_type"],
         )
-
+# Render a Cesium 3D visualization by:
+# 1. Extracting coordinates and features from simulation states,
+# 2. Creating a GeoJSON time-series,
+# 3. Writing the GeoJSON and HTML files for visualization.
     def render(self, state_trajectory):
+		# Initialize storage for coordinate and property values
         coords, values = [], []
+		# Determine output filenames based on simulation name
         name = self.config["simulation_metadata"]["name"]
         geodata_path, geoplot_path = f"{name}.geojson", f"{name}.html"
 
+        # Loop through each episode's final state to extract coordinates and property values
         for i in range(0, len(state_trajectory) - 1):
             final_state = state_trajectory[i][-1]
-
+		# Read coordinates for entities (e.g., agents)
             coords = np.array(read_var(final_state, self.entity_position)).tolist()
+		# Read the property values (e.g., money_spent) and flatten them
             values.append(
                 np.array(read_var(final_state, self.entity_property)).flatten().tolist()
             )
-
+        # Generate timestamps for each simulation step
         start_time = pd.Timestamp.utcnow()
         timestamps = [
             start_time + pd.Timedelta(seconds=i * self.step_time)
@@ -255,7 +266,7 @@ class GeoPlot:
                 * self.config["simulation_metadata"]["num_steps_per_episode"]
             )
         ]
-
+        # Build GeoJSON time-series data for each coordinate point
         geojsons = []
         for i, coord in enumerate(coords):
             features = []
@@ -274,10 +285,11 @@ class GeoPlot:
                     }
                 )
             geojsons.append({"type": "FeatureCollection", "features": features})
-
+        
+# Save the GeoJSON data to disk
         with open(geodata_path, "w", encoding="utf-8") as f:
             json.dump(geojsons, f, ensure_ascii=False, indent=2)
-
+    # Populate the HTML template with data and write it to disk
         tmpl = Template(geoplot_template)
         with open(geoplot_path, "w", encoding="utf-8") as f:
             f.write(
